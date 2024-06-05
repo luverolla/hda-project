@@ -24,13 +24,8 @@ library(class)
 library(gridExtra)
 library(pROC)
 
-#Set working directory
-getwd()
-#setwd('/Users/americoliguori/Desktop/Ame/University/Laurea Magistrale/Second Year/Second Semester/HDA/HdaClassification')
-dir()
-
 #### Loading Data & Dataset Details #### 
-Diabetes=read.csv("DiabetesClass.csv",header=T,na.strings='')
+Diabetes=read.csv("data/DiabetesClass.csv",header=T,na.strings='')
 head(Diabetes)
 str(Diabetes)
 dim(Diabetes)
@@ -49,6 +44,7 @@ dim(Diabetes)
 
 #Pairwise Plots
 numeric_data <- sapply(Diabetes, is.numeric)
+dev.new()
 pairs(Diabetes[,numeric_data], pch = 19, cex = 0.1, main = "Pair Plot of Numeric Data")
 #Notes about Pairwise Plot:
 #some notable relationships include weight and waist, bp.1s and bp.1d, waist and hip, weight and hip.
@@ -105,6 +101,7 @@ histograms <- lapply(names(Diabetes)[-1], create_histogram)
 histograms <- histograms[!sapply(histograms, is.null)]
 
 # Visualization of histograms in a grid layout
+dev.new()
 grid.arrange(grobs = histograms, ncol = 3)
 
 
@@ -143,6 +140,7 @@ confusionMatrix(ct)
 test_lvls <- as.factor(ifelse(test_cl$DiabDiagnosis == "Yes", 1, 0))
 naiveROC <- roc(as.numeric(test_lvls),as.numeric(y_pred))
 naiveROC
+dev.new()
 plot(naiveROC, legacy.axes = TRUE, main = "ROC curve - Naive Bayes Classifier", col = "blue", lwd = 2)
 
 
@@ -175,4 +173,5 @@ confusionMatrix(data=factor(out_logi),reference = test_cl$DiabDiagnosis)
 # ROC curve
 logiROC <- roc(as.numeric(test_cl$DiabDiagnosis),as.numeric(y_pred_logi))
 logiROC
+dev.new()
 plot(logiROC, legacy.axes = TRUE, main = "ROC curve - Logistic Classifier", col = "blue", lwd = 2)
