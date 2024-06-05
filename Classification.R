@@ -3,14 +3,14 @@
 ##################################
 
 #Packages installation
-#install.packages("tidyverse")
-#install.packages("e1071")
-#install.packages("caTools")
-#install.packages("caret")
-#install.packages("klaR")
-#install.packages("mvtnorm")
-#install.packages("class")
-#install.packages("gridExtra")
+install.packages("tidyverse")
+install.packages("e1071")
+install.packages("caTools")
+install.packages("caret")
+install.packages("klaR")
+install.packages("mvtnorm")
+install.packages("class")
+install.packages("gridExtra")
 
 #Packages loading
 library(tidyverse)
@@ -24,6 +24,11 @@ library(class)
 library(gridExtra)
 library(pROC)
 
+#Set working directory
+#getwd()
+#setwd('/Users/americoliguori/Desktop/Ame/University/Laurea Magistrale/Second Year/Second Semester/HDA/HdaClassification')
+#dir()
+
 #### Loading Data & Dataset Details #### 
 Diabetes=read.csv("data/DiabetesClass.csv",header=T,na.strings='')
 head(Diabetes)
@@ -36,7 +41,7 @@ summary(Diabetes)
 count <- table(Diabetes$DiabDiagnosis)
 withDiabetes <- count[2]
 withoutDiabetes <- count[1]
-cat("Diabetic Count:", withDiabetes, "\nNon-Diabetic Count:", withoutDiabetes, "\n")
+cat("DiabDiagnosis Count:", withDiabetes, "\nNon-DiabDiagnosis Count:", withoutDiabetes, "\n")
 
 #Removal of rows with NAs values in the DiabDiagnosis column.
 Diabetes <- Diabetes[complete.cases(Diabetes$DiabDiagnosis), ]
@@ -84,7 +89,7 @@ create_histogram <- function(variable) {
     ggplot(Diabetes, aes(x = !!sym(variable), fill = DiabDiagnosis)) +
       geom_histogram(aes(y = after_stat(density)), color = 'black', alpha = 0.5, bins = 30) +
       geom_density(color = 'black') +
-      labs(x = variable, y = 'Density', fill = 'Diabetic', title = paste('Distribution of', variable)) +
+      labs(x = variable, y = 'Density', fill = 'DiabDiagnosis', title = paste('Distribution of', variable)) +
       theme_bw() +
       theme(plot.title = element_text(hjust = 0.5),
             legend.position = 'top',
@@ -111,67 +116,73 @@ grid.arrange(grobs = histograms, ncol = 3)
 
 set.seed(2024)
 
-# Remove id, location, height, bp.1d, time.ppn, gender columns
+Diabetes$frame <- as.numeric(factor(Diabetes$frame, levels = c('small', 'medium', 'large')))
 Diabetes <- Diabetes[, !(names(Diabetes) %in% c('id', 'location', 'height', 'bp.1d', 'time.ppn', 'gender'))]
-
-# Splitting data into train and test data
-split <- sample.split(Diabetes, SplitRatio = 0.7)
-train_cl <- subset(Diabetes, split == "TRUE")
-test_cl <- subset(Diabetes, split == "FALSE")
-
 Diabetes$DiabDiagnosis=factor(Diabetes$DiabDiagnosis)
 
-##################################
-####  NAIVE BAYES CLASSIFIER  ####
-##################################
+# Split the data into training and testing sets
+splitIndex <- createDataPartition(Diabetes$DiabDiagnosis, p = 0.7, list = FALSE)
+train_data <- Diabetes[splitIndex, ]
+test_data <- Diabetes[-splitIndex, ]
 
-# Fitting Naive Bayes model to training data set
-classifier_cl <- naiveBayes(DiabDiagnosis ~ ., data = train_cl); classifier_cl
+# Check for and handle missing values
+train_data <- train_data %>% na.omit()
+test_data <- test_data %>% na.omit()
 
-# Predicting on test data
-y_pred <- predict(classifier_cl, newdata = test_cl)
+# Define the models
+models <- list(
+  'Gaussian Naive Bayes' = naiveBayes(DiabDiagnosis ~ ., data = train_data),
+  'Logistic Regression' = glm(DiabDiagnosis ~., data = train_data, family = binomial),
+  'k-NN Classification' = knn(train = train_data[, -ncol(train_data)], test = test_data[, -ncol(test_data)], cl = train_data$DiabDiagnosis, k = 5)
+)
 
-# Confusion Matrix
-ct <- table(y_pred, test_cl$DiabDiagnosis); ct
-confusionMatrix(ct)
+# Create a data frame to store the results
+results_Diabetes <- data.frame(Model = character(),
+                               Accuracy = numeric(),
+                               Precision = numeric(),
+                               Recall = numeric(),
+                               F1_Score = numeric(),
+                               stringsAsFactors = FALSE)
 
-# ROC curve
-# replace "yes" with 1 and "no" with 0 in the test_cl$DiabDiagnosis
-test_lvls <- as.factor(ifelse(test_cl$DiabDiagnosis == "Yes", 1, 0))
-naiveROC <- roc(as.numeric(test_lvls),as.numeric(y_pred))
-naiveROC
-dev.new()
-plot(naiveROC, legacy.axes = TRUE, main = "ROC curve - Naive Bayes Classifier", col = "blue", lwd = 2)
+# Train and evaluate models
+for (model_name in names(models)) {
+  model <- models[[model_name]]
+  
+  if (model_name == 'Gaussian Naive Bayes') {
+    # Make predictions on the test set
+    y_pred <- as.factor(predict(model, newdata = test_data, type = 'class'))
+  } else if (model_name == 'Logistic Regression') {
+    y_pred <- factor(predict(model, newdata = test_data, type = "response") > 0.5, levels = c(FALSE, TRUE), labels = c("No", "Yes"))
+  } else if (model_name == 'k-NN Classification') {
+    y_pred <- model
+  }
+  
+  # Calculate evaluation metrics
+  cm <- confusionMatrix(y_pred, test_data$DiabDiagnosis)
+  accuracy <- cm$overall['Accuracy'] * 100
+  precision <- cm$byClass['Pos Pred Value'] * 100
+  recall <- cm$byClass['Sensitivity'] * 100
+  f1 <- cm$byClass['F1'] * 100
+  
+  # Print results
+  cat(paste0(model_name, ":\n"))
+  cat(paste0("  Accuracy: ", accuracy, "\n"))
+  cat(paste0("  Precision: ", precision, "\n"))
+  cat(paste0("  Recall: ", recall, "\n"))
+  cat(paste0("  F1-Score: ", f1, "\n"))
+  
+  # Add results to the data frame
+  results_Diabetes <- rbind(results_Diabetes, data.frame(Model = model_name,
+                                                         Accuracy = accuracy,
+                                                         Precision = precision,
+                                                         Recall = recall,
+                                                         F1_Score = f1))
+  
+  # Print Confusion Matrix
+  cat("  Confusion Matrix:\n")
+  print(table(y_pred, test_data$DiabDiagnosis))
+  cat("\n")
+}
 
-
-######################################
-####   LOGISTIC CLASSIFICATION    ####
-######################################
-
-# Splitting data into train and test data
-split <- sample.split(Diabetes, SplitRatio = 0.7)
-train_cl <- subset(Diabetes, split == "TRUE")
-test_cl <- subset(Diabetes, split == "FALSE")
-
-Diabetes$DiabDiagnosis=factor(Diabetes$DiabDiagnosis)
-
-# logistic classifier
-classifier_logi <- glm(DiabDiagnosis ~., data = train_cl, family=binomial); 
-summary(classifier_logi)
-
-# Predicting on test data
-y_pred_logi = predict(classifier_logi, type="response", newdata = test_cl)
-contrasts(train_cl$DiabDiagnosis) 
-
-# Confusion Matrix
-out_logi <- rep("No",nrow(test_cl))
-out_logi[y_pred_logi > .5]="Yes"
-ct_logi = table(out_logi, test_cl$DiabDiagnosis); ct_logi
-mean(out_logi == test_cl$DiabDiagnosis)
-confusionMatrix(data=factor(out_logi),reference = test_cl$DiabDiagnosis)
-
-# ROC curve
-logiROC <- roc(as.numeric(test_cl$DiabDiagnosis),as.numeric(y_pred_logi))
-logiROC
-dev.new()
-plot(logiROC, legacy.axes = TRUE, main = "ROC curve - Logistic Classifier", col = "blue", lwd = 2)
+# Print final results
+print(results_Diabetes)
