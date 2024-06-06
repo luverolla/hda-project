@@ -5,6 +5,7 @@
 #install.packages("dplyr") # for data manipulation
 #install.packages("ggplot2") # for data visualization
 #install.packages("gridExtra") # for grid layout
+#install.packages("cvms")
 
 library(glmnet) # general linear models
 library(caret) # train/test split
@@ -12,6 +13,7 @@ library(magrittr) # for the pipe operator
 library(dplyr) # for data manipulation
 library(ggplot2) # for data visualization
 library(gridExtra) # for grid layout
+library(cvms)
 
 options(max.print=100000000)
 
@@ -63,6 +65,22 @@ plot_histograms <- function(data) {
   grid.arrange(grobs = histograms, ncol = 6)
 }
 
+plot_confmat <- function(confmat) {
+  df <- as.data.frame(as.table(confmat))
+  names(df) <- c("Actual", "Predicted", "Freq")
+  
+  # compute percentages based on real values
+  df$Percentage <- df$Freq / rowSums(confmat) * 100
+  
+  ggplot(data = df, aes(x = Predicted, y = Actual, fill = Percentage)) +
+    geom_tile(color = "white") +
+    scale_fill_gradient(low = "white", high = "#0000ff77") +
+    geom_text(aes(label = sprintf("%.1f%%", Percentage)), vjust = 1) +
+    theme_minimal() +
+    labs(x = "Predicted", y = "Actual") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+
 # >>> Plain linear regression ---
 
 linear_model <- glmnet(X_train, Y_train, family = "binomial", alpha=0, lambda=0);
@@ -75,7 +93,7 @@ lin_predicted_classes <- as.factor(lin_predicted_classes)
 lin_conf_matrix <- confusionMatrix(lin_predicted_classes, Y_test)
 print(lin_conf_matrix)
 dev.new()
-plot(lin_conf_matrix$table, col = c("red", "#0b872c"), main = "Confusion Matrix", xlab = "Predicted classes", ylab = "True classes")
+plot_confmat(lin_conf_matrix$table)
 
 # ROC Curve
 library(pROC)
@@ -103,18 +121,39 @@ lasso_predicted_classes <- as.factor(lasso_predicted_classes)
 data_lasso = data[, which(lasso_beta != 0)]
 X_lasso = X_train[, which(lasso_beta != 0)]
 plot_histograms(data_lasso)
+cols_lasso = names(data_lasso);
+
+# generate a table with statistics on the data_lasso dataset
+# such as mean, median, standard deviation, etc.
+summary_data_lasso = data.frame(
+  mean = apply(data_lasso, 2, mean),
+  median = apply(data_lasso, 2, median),
+  sd = apply(data_lasso, 2, sd),
+  min = apply(data_lasso, 2, min),
+  max = apply(data_lasso, 2, max),
+  # add quartiles
+  Q1 = apply(data_lasso, 2, quantile, probs = 0.25),
+  Q3 = apply(data_lasso, 2, quantile, probs = 0.75),
+  # add interquartile range
+  IQR = apply(data_lasso, 2, IQR)
+)
+# save the table to a csv file
+write.csv(summary_data_lasso, "data/summary_data_lasso.csv")
 
 # scatterplot between feature 1 and 2
 dev.new()
-plot(X_lasso[,1], X_lasso[,2], col=c("red","#0b872c")[Y_train], pch=16, xlab = "Feature 1", ylab = "Feature 2")
+plot(X_lasso[,1], X_lasso[,2], col=c("red","#0b872c")[Y_train], pch=16, xlab = cols_lasso[1], ylab = cols_lasso[2])
+legend("topright", legend = c("Negative", "Positive"), col = c("red", "#0b872c"), pch = 16)
 
 # scatterplot between feature 2 and 3
 dev.new()
-plot(X_lasso[,2], X_lasso[,3], col=c("red","#0b872c")[Y_train], pch=16, xlab = "Feature 2", ylab = "Feature 3")
+plot(X_lasso[,2], X_lasso[,3], col=c("red","#0b872c")[Y_train], pch=16, xlab = cols_lasso[2], ylab = cols_lasso[3])
+  legend("topright", legend = c("Negative", "Positive"), col = c("red", "#0b872c"), pch = 16)
 
 # scatterplot between feature 1 and 10
 dev.new()
-plot(X_lasso[,1], X_lasso[,10], col=c("red","#0b872c")[Y_train], pch=16, xlab = "Feature 1", ylab = "Feature 10")
+plot(X_lasso[,1], X_lasso[,10], col=c("red","#0b872c")[Y_train], pch=16, xlab = cols_lasso[1], ylab = cols_lasso[10])
+  legend("topright", legend = c("Negative", "Positive"), col = c("red", "#0b872c"), pch = 16)
 
 # pair plots of first 10 features
 dev.new()
@@ -124,7 +163,7 @@ pairs(X_lasso[,1:5], col=c("red","#0b872c")[Y_train])
 conf_matrix <- confusionMatrix(lasso_predicted_classes, Y_test)
 print(conf_matrix)
 dev.new()
-plot(conf_matrix$table, col = c("red", "#0b872c"), main = "Confusion Matrix", xlab = "Predicted classes", ylab = "True classes")
+plot_confmat(conf_matrix$table)
 
 # ROC Curve
 library(pROC)
@@ -151,7 +190,7 @@ ridge_predicted_classes <- as.factor(ridge_predicted_classes)
 ridge_conf_matrix <- confusionMatrix(ridge_predicted_classes, Y_test)
 print(ridge_conf_matrix)
 dev.new()
-plot(ridge_conf_matrix$table, col = c("red", "#0b872c"), main = "Confusion Matrix", xlab = "Predicted classes", ylab = "True classes")
+plot_confmat(ridge_conf_matrix$table)
 
 # ROC Curve
 library(pROC)
@@ -194,7 +233,7 @@ predicted_classes_pca <- as.factor(predicted_classes_pca)
 
 # Confusion matrix
 conf_matrix_pca <- confusionMatrix(predicted_classes_pca, Y_test)
-plot(conf_matrix_pca$table, col = c("red", "green"), main = "Confusion Matrix", xlab = "Predicted classes", ylab = "True classes")
+plot_confmat(conf_matrix_pca$table)
 
 # ROC Curve
 library(pROC)
@@ -206,6 +245,4 @@ plot(modelROC_pca, legacy.axes = TRUE)
 library("scatterplot3d")
 dev.new()
 scatterplot3d(X_train_pca[,1], y=X_train_pca[,2], z=X_train_pca[,3], color=c("red","green")[Y_train], pch=16, main="PCA scatter", xlab="PC1", ylab="PC2", zlab="PC3")
-
-
 
