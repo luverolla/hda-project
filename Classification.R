@@ -18,7 +18,6 @@ library(ggplot2)
 library(e1071)
 library(caTools)
 library(caret)
-# library(klaR)
 library(mvtnorm)
 library(class)
 library(gridExtra)
@@ -43,7 +42,7 @@ withDiabetes <- count[2]
 withoutDiabetes <- count[1]
 cat("DiabDiagnosis Count:", withDiabetes, "\nNon-DiabDiagnosis Count:", withoutDiabetes, "\n")
 
-#Removal of rows with NAs values in the DiabDiagnosis column.
+#Remove rows with NAs values in the DiabDiagnosis column.
 Diabetes <- Diabetes[complete.cases(Diabetes$DiabDiagnosis), ]
 dim(Diabetes)
 
@@ -51,15 +50,14 @@ dim(Diabetes)
 numeric_data <- sapply(Diabetes, is.numeric)
 dev.new()
 pairs(Diabetes[,numeric_data], pch = 19, cex = 0.1, main = "Pair Plot of Numeric Data")
-#Notes about Pairwise Plot:
-#some notable relationships include weight and waist, bp.1s and bp.1d, waist and hip, weight and hip.
+#Notes about Pairwise Plot: some notable relationships include weight and waist, bp.1s and bp.1d, waist and hip, weight and hip.
 
 
 ##########################
 #### DATASET CLEANING ####
 ##########################
 
-#We drop bp.2s and bp.2d because there are too many missing values (262 NAs each)
+#Drop bp.2s and bp.2d because there are too many missing values (262 NAs each)
 Diabetes <- Diabetes %>% select(-"bp.2s", -"bp.2d")
 
 #Sobstitute the NAs of chol, hdl e ratio with median computed values
@@ -85,7 +83,7 @@ Diabetes <- Diabetes %>%
 
 #Function for create histograms 
 create_histogram <- function(variable) {
-  if (!(is.factor(Diabetes[[variable]]) || is.character(Diabetes[[variable]]))) {  # Exclude discrete variables
+  if (!(is.factor(Diabetes[[variable]]) || is.character(Diabetes[[variable]]))) {  
     ggplot(Diabetes, aes(x = !!sym(variable), fill = DiabDiagnosis)) +
       geom_histogram(aes(y = after_stat(density)), color = 'black', alpha = 0.5, bins = 30) +
       geom_density(color = 'black') +
@@ -95,7 +93,7 @@ create_histogram <- function(variable) {
             legend.position = 'top',
             legend.justification = 'right')
   } else {
-    return(NULL)  # Return NULL for discrete variables
+    return(NULL)  
   }
 }
 
@@ -144,17 +142,24 @@ results_Diabetes <- data.frame(Model = character(),
                                F1_Score = numeric(),
                                stringsAsFactors = FALSE)
 
+#Define some variables
+roc_curves <- list()
+colors <- c("blue", "green", "red")
+
 # Train and evaluate models
 for (model_name in names(models)) {
   model <- models[[model_name]]
   
   if (model_name == 'Gaussian Naive Bayes') {
     # Make predictions on the test set
-    y_pred <- as.factor(predict(model, newdata = test_data, type = 'class'))
+    y_prob <- predict(model, newdata = test_data, type = 'raw')[, 2]
+    y_pred <- as.factor(ifelse(y_prob > 0.5, "Yes", "No"))
   } else if (model_name == 'Logistic Regression') {
-    y_pred <- factor(predict(model, newdata = test_data, type = "response") > 0.5, levels = c(FALSE, TRUE), labels = c("No", "Yes"))
+    y_prob <- predict(model, newdata = test_data, type = "response")
+    y_pred <- as.factor(ifelse(y_prob > 0.5, "Yes", "No"))
   } else if (model_name == 'k-NN Classification') {
     y_pred <- model
+    y_prob <- as.numeric(y_pred == "Yes")
   }
   
   # Calculate evaluation metrics
@@ -164,13 +169,6 @@ for (model_name in names(models)) {
   recall <- cm$byClass['Sensitivity'] * 100
   f1 <- cm$byClass['F1'] * 100
   
-  # Print results
-  cat(paste0(model_name, ":\n"))
-  cat(paste0("  Accuracy: ", accuracy, "\n"))
-  cat(paste0("  Precision: ", precision, "\n"))
-  cat(paste0("  Recall: ", recall, "\n"))
-  cat(paste0("  F1-Score: ", f1, "\n"))
-  
   # Add results to the data frame
   results_Diabetes <- rbind(results_Diabetes, data.frame(Model = model_name,
                                                          Accuracy = accuracy,
@@ -179,9 +177,16 @@ for (model_name in names(models)) {
                                                          F1_Score = f1))
   
   # Print Confusion Matrix
-  cat("  Confusion Matrix:\n")
+  cat(model_name,"\nConfusion Matrix:\n")
   print(table(y_pred, test_data$DiabDiagnosis))
   cat("\n")
+
+  #ROC curve
+  roc_curve <- roc(test_data$DiabDiagnosis, y_prob)
+  roc_curves[[model_name]] <- roc_curve
+  
+  plot(roc_curve, col = colors[length(roc_curves)], lwd = 2, add = length(roc_curves) > 1, main = "ROC Curves")
+  legend("bottomright", legend = names(roc_curves), col = colors[1:length(roc_curves)], lwd = 2)
 }
 
 # Print final results
